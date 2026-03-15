@@ -52,8 +52,9 @@ springlens:
     min-chunk-length-to-embed: 5
     max-num-chunks: 10000
     keep-separator: true
-    similarity-threshold: 0.6
+    similarity-threshold: 0.5
     top-k: 4
+    pdf-reader-type: auto
 
 
 logging:

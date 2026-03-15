@@ -1,6 +1,7 @@
 package com.ai.spring_lens.service;
 
 import com.ai.spring_lens.config.IngestionProperties;
+import com.ai.spring_lens.service.strategy.PdfReaderStrategy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -21,9 +23,10 @@ public class DocumentIngestionService {
     private final VectorStore vectorStore;
     private final TokenTextSplitter splitter;
     private final IngestionProperties properties;
+    private final Map<String, PdfReaderStrategy> readerStrategies;
 
     public DocumentIngestionService(VectorStore vectorStore,
-                                    IngestionProperties properties) {
+                                    IngestionProperties properties, Map<String, PdfReaderStrategy> readerStrategies) {
         this.vectorStore = vectorStore;
         this.properties = properties;
         this.splitter = TokenTextSplitter.builder()
@@ -33,6 +36,7 @@ public class DocumentIngestionService {
                 .withMaxNumChunks(properties.getMaxNumChunks())
                 .withKeepSeparator(properties.isKeepSeparator())
                 .build();
+        this.readerStrategies = readerStrategies;
     }
 
     public IngestionResult ingest(Resource pdfResource, String originalFileName) {
@@ -43,8 +47,7 @@ public class DocumentIngestionService {
             return IngestionResult.duplicate(originalFileName);
         }
 
-        PagePdfDocumentReader reader = new PagePdfDocumentReader(pdfResource);
-        List<Document> documents = splitter.apply(reader.get());
+        List<Document> documents = splitter.apply(readPdf(pdfResource));
 
         String timestamp = LocalDateTime.now()
                 .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
@@ -60,6 +63,24 @@ public class DocumentIngestionService {
                 originalFileName, documents.size());
 
         return IngestionResult.success(originalFileName, documents.size());
+    }
+
+    private List<Document> readPdf(Resource pdfResource) {
+        PdfReaderStrategy strategy = readerStrategies.get(properties.getPdfReaderType());
+        if (strategy != null) {
+            return strategy.read(pdfResource);
+        }
+        return readPdfAuto(pdfResource);
+    }
+
+    private List<Document> readPdfAuto(Resource pdfResource) {
+        try {
+            return readerStrategies.get("page").read(pdfResource);
+        } catch (Exception e) {
+            log.warn("Page reader failed for {}, falling back to paragraph: {}",
+                    pdfResource.getFilename(), e.getMessage());
+            return readerStrategies.get("paragraph").read(pdfResource);
+        }
     }
 
     private boolean isDuplicate(String originalFileName) {

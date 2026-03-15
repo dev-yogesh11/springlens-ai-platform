@@ -21,8 +21,4 @@ Under active development — Phase 1 (Foundation)
 - Neo4j (GraphRAG — optional layer)
 
 ## Project Structure
-This project is built incrementally — dependencies are added only when needed:
-- Week 1-2: WebFlux foundation + first LLM calls
-- Week 3-4: Spring AI integration + RAG pipeline
-- Week 5+: PGVector, Redis, Kafka added progressively
-  EOF
+This project is built incrementally — dependencies are added only when needed.

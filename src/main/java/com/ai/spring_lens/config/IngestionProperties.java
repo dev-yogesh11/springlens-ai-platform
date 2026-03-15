@@ -15,4 +15,5 @@ public class IngestionProperties {
     private boolean keepSeparator = true;
     private double similarityThreshold = 0.7;
     private int topK = 4;
+    private String pdfReaderType="auto";
 }

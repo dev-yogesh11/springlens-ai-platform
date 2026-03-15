@@ -39,4 +39,16 @@ public class SpringAiChatController {
     public Flux<String> stream(@RequestParam String message) {
         return chatService.stream(message);
     }
+
+    @PostMapping("/query")
+    public Mono<ResponseEntity<Object>> query(
+            @RequestBody ChatRequest request
+    ) {
+        return chatService.query(request.message())
+                .<ResponseEntity<Object>>map(ResponseEntity::ok)
+                .onErrorResume(ex -> Mono.just(
+                        ResponseEntity.internalServerError()
+                                .body((Object) new ErrorResponse("QUERY_ERROR", ex.getMessage()))
+                ));
+    }
 }

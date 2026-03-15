@@ -2,6 +2,7 @@ package com.ai.spring_lens.service;
 
 import com.ai.spring_lens.config.IngestionProperties;
 import com.ai.spring_lens.model.response.ChatResponse;
+import com.ai.spring_lens.model.response.QueryResponse;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
@@ -16,6 +17,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -170,6 +172,65 @@ public class SpringAiChatService {
                         .stream()
                         .content()
                 );
+    }
+
+    public Mono<QueryResponse> query(String message) {
+
+        return Mono.fromCallable(() -> {
+                    List<Document> relevantDocs = vectorStore.similaritySearch(
+                            SearchRequest.builder()
+                                    .query(message)
+                                    .topK(properties.getTopK())
+                                    .similarityThreshold(properties.getSimilarityThreshold())
+                                    .build()
+                    );
+
+                    List<QueryResponse.CitedSource> sources = relevantDocs.stream()
+                            .map(doc -> new QueryResponse.CitedSource(
+                                    (String) doc.getMetadata().getOrDefault(
+                                            "original_file_name",
+                                            doc.getMetadata().get("file_name")),
+                                    Integer.parseInt(String.valueOf(
+                                            doc.getMetadata().get("page_number"))),
+                                    doc.getText().substring(0, Math.min(200, doc.getText().length()))
+                                            .trim()
+                                            .replaceAll("\\s+", " ")
+                            ))
+                            .toList();
+
+                    String context = relevantDocs.stream()
+                            .map(doc -> "Source: " + doc.getMetadata().getOrDefault(
+                                    "original_file_name", doc.getMetadata().get("file_name")) +
+                                    " (Page " + doc.getMetadata().get("page_number") + ")" +
+                                    System.lineSeparator() + "Content: " + doc.getText())
+                            .collect(Collectors.joining(
+                                    System.lineSeparator() + System.lineSeparator() +
+                                            "---" + System.lineSeparator() + System.lineSeparator()
+                            ));
+
+                    String augmentedMessage = relevantDocs.isEmpty()
+                            ? "The user asked: " + message +
+                            "\n\nNo relevant information found. Politely inform the user."
+                            : "Context from documents:" + System.lineSeparator() +
+                            context + System.lineSeparator() + System.lineSeparator() +
+                            "Question: " + message;
+
+                    log.debug("Query RAG retrieved {} chunks for query={}",
+                            relevantDocs.size(), message);
+
+                    String answer = chatClient.prompt()
+                            .user(augmentedMessage)
+                            .call()
+                            .content();
+
+                    return new QueryResponse(
+                            answer,
+                            sources,
+                            relevantDocs.isEmpty() ? 0.0 : 0.8,
+                            UUID.randomUUID()
+                    );
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
 }

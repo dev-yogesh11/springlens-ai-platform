@@ -45,6 +45,26 @@ resilience4j:
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
 
+springlens:
+  ingestion:
+    chunk-size: 512
+    min-chunk-size-chars: 50
+    min-chunk-length-to-embed: 5
+    max-num-chunks: 10000
+    keep-separator: true
+    similarity-threshold: 0.7
+    top-k: 4
+
+
+logging:
+  level:
+    org.springframework.ai: DEBUG
+    org.springframework.ai.vectorstore: DEBUG
+    org.springframework.ai.openai: DEBUG
+    org.springframework.ai.reader: DEBUG
+    org.springframework.ai.transformer: DEBUG
+    com.ai.spring_lens: DEBUG
+
 management:
   endpoints:
     web:

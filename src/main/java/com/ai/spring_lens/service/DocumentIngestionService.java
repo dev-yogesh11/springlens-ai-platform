@@ -1,8 +1,7 @@
 package com.ai.spring_lens.service;
 
 import com.ai.spring_lens.config.IngestionProperties;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
@@ -15,11 +14,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+@Slf4j
 @Service
 public class DocumentIngestionService {
-
-    private static final Logger log =
-            LoggerFactory.getLogger(DocumentIngestionService.class);
 
     private final VectorStore vectorStore;
     private final TokenTextSplitter splitter;

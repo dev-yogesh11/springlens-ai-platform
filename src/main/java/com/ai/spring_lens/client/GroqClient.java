@@ -2,8 +2,7 @@ package com.ai.spring_lens.client;
 
 import com.ai.spring_lens.client.dto.GroqRequest;
 import com.ai.spring_lens.client.dto.GroqResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -12,10 +11,9 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Component
 public class GroqClient {
-
-    private static final Logger log = LoggerFactory.getLogger(GroqClient.class);
 
     private final WebClient webClient;
     private final String model;

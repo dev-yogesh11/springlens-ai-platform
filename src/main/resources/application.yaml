@@ -52,18 +52,29 @@ springlens:
     min-chunk-length-to-embed: 5
     max-num-chunks: 10000
     keep-separator: true
-    similarity-threshold: 0.7
+    similarity-threshold: 0.6
     top-k: 4
 
 
 logging:
   level:
-    org.springframework.ai: DEBUG
-    org.springframework.ai.vectorstore: DEBUG
-    org.springframework.ai.openai: DEBUG
-    org.springframework.ai.reader: DEBUG
-    org.springframework.ai.transformer: DEBUG
+    root: INFO
     com.ai.spring_lens: DEBUG
+    org.springframework.ai.vectorstore.pgvector.PgVectorStore: DEBUG
+    org.springframework.ai.openai.OpenAiEmbeddingModel: DEBUG
+    org.springframework.ai.openai.OpenAiChatModel: DEBUG
+    org.springframework.web.reactive.function.client.ExchangeFunctions: DEBUG
+    org.springframework.ai.transformer.splitter: DEBUG
+    org.springframework.ai.reader: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/spring-lens.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
+      file-name-pattern: logs/spring-lens-%d{yyyy-MM-dd}.%i.log
 
 management:
   endpoints:

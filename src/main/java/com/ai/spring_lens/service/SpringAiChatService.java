@@ -4,8 +4,7 @@ import com.ai.spring_lens.model.response.ChatResponse;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -17,10 +16,10 @@ import reactor.core.scheduler.Schedulers;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class SpringAiChatService {
 
-    private static final Logger log = LoggerFactory.getLogger(SpringAiChatService.class);
     private static final String SYSTEM_PROMPT ="""
                         You are SpringLens, a helpful AI assistant.
                         Answer questions based on the provided context.
@@ -61,7 +60,7 @@ public class SpringAiChatService {
                                     doc.getMetadata().get("file_name")) +
                                     " (Page " + doc.getMetadata().get("page_number") + ")" +
                                     System.lineSeparator() + "Content: " +
-                                    doc.getFormattedContent())
+                                    doc.getText())
                             .collect(Collectors.joining(
                                     System.lineSeparator() + System.lineSeparator() +
                                             "---" + System.lineSeparator() + System.lineSeparator()
@@ -80,6 +79,7 @@ public class SpringAiChatService {
 
                     log.info("RAG retrieved {} chunks for query={}",
                             relevantDocs.size(), message);
+                    log.debug("Augmented prompt sent to LLM:\n{}", augmentedMessage);
 
                     // Step 4: call LLM with augmented prompt
                     return chatClient.prompt()
@@ -89,14 +89,36 @@ public class SpringAiChatService {
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .transform(CircuitBreakerOperator.of(circuitBreaker))
-                .map(response -> new ChatResponse(
-                        response.getResult().getOutput().getText(),
-                        response.getMetadata().getModel(),
-                        response.getMetadata().getUsage().getPromptTokens(),
-                        response.getMetadata().getUsage().getCompletionTokens(),
-                        response.getMetadata().getUsage().getTotalTokens(),
-                        System.currentTimeMillis() - start
-                ))
+                .doOnSuccess(response -> {
+                    if (response == null) return;
+                    var metadata = response.getMetadata();
+                    var usage = metadata != null ? metadata.getUsage() : null;
+                    var text = response.getResult() != null
+                            ? response.getResult().getOutput().getText()
+                            : "no content";
+
+                    log.debug(
+                            "LLM response: model={} promptTokens={} completionTokens={} response=\n{}",
+                            metadata != null ? metadata.getModel() : "unknown",
+                            usage != null ? usage.getPromptTokens() : 0,
+                            usage != null ? usage.getCompletionTokens() : 0,
+                            text
+                    );
+                })
+                .map(response -> {
+                    var result = response.getResult();
+                    var metadata = response.getMetadata();
+                    var usage = metadata != null ? metadata.getUsage() : null;
+
+                    return new ChatResponse(
+                            result != null ? result.getOutput().getText() : "",
+                            metadata != null ? metadata.getModel() : "unknown",
+                            usage != null ? usage.getPromptTokens() : 0,
+                            usage != null ? usage.getCompletionTokens() : 0,
+                            usage != null ? usage.getTotalTokens() : 0,
+                            System.currentTimeMillis() - start
+                    );
+                })
                 .onErrorResume(ex -> {
                     log.warn("Fallback triggered message={} reason={}",
                             message, ex.getMessage());

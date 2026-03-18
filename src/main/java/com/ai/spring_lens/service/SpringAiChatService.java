@@ -73,7 +73,6 @@ public class SpringAiChatService {
                             ));
 
                     // Step 3: build augmented prompt
-                    // Step 3: build augmented prompt
                     String augmentedMessage = relevantDocs.isEmpty()
                             ? "The user asked: " + message +
                             "\n\nNo relevant information was found in the knowledge base. " +
@@ -171,7 +170,11 @@ public class SpringAiChatService {
                         .user(augmentedMessage)
                         .stream()
                         .content()
-                );
+                )
+                .transform(CircuitBreakerOperator.of(circuitBreaker))
+                .onErrorResume(ex -> Flux.just(
+                        "Service temporarily unavailable. Please try again shortly."
+                ));
     }
 
     public Mono<QueryResponse> query(String message) {
@@ -230,7 +233,12 @@ public class SpringAiChatService {
                             UUID.randomUUID()
                     );
                 })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic())
+                .transform(CircuitBreakerOperator.of(circuitBreaker))
+                .onErrorResume(ex -> Mono.just(new QueryResponse(
+                        "Service temporarily unavailable. Please try again shortly.",
+                        List.of(), 0.0, UUID.randomUUID()
+                )));
     }
 
 }

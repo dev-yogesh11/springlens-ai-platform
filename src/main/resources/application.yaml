@@ -32,6 +32,12 @@ spring:
       max-file-size: 50MB
       max-request-size: 50MB
 
+  data:
+    redis:
+      host: localhost
+      port: 6380
+      password: ${REDIS_PASSWORD}
+
 server:
   port: 8087
 
@@ -55,7 +61,11 @@ springlens:
     similarity-threshold: 0.5
     top-k: 4
     pdf-reader-type: auto
-
+  chat:
+    memory:
+      max-messages: 10
+      ttl-seconds: 3600
+      key-Prefix: springlens:chat-
 
 logging:
   level:

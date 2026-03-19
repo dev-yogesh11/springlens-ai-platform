@@ -23,7 +23,7 @@ public class SpringAiChatController {
     public Mono<ResponseEntity<Object>> chat(
             @RequestBody ChatRequest request
     ) {
-        return chatService.chat(request.message())
+        return chatService.chat(request.message(),request.conversationId())
                 .<ResponseEntity<Object>>map(ResponseEntity::ok)
                 .onErrorResume(ex -> {
                     String message = ex.getMessage() != null

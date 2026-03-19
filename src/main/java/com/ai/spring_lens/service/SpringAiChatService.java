@@ -8,6 +8,10 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.ChatMemoryRepository;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -34,20 +38,30 @@ public class SpringAiChatService {
     private final CircuitBreaker circuitBreaker;
     private final VectorStore vectorStore;
     private final IngestionProperties properties;
+    private final ChatMemory chatMemory;
 
     public SpringAiChatService(ChatClient.Builder builder,
                                CircuitBreakerRegistry circuitBreakerRegistry,
-                               VectorStore vectorStore, IngestionProperties properties) {
+                               VectorStore vectorStore, IngestionProperties properties, ChatMemoryRepository chatMemoryRepository) {
         this.vectorStore = vectorStore;
+        this.properties = properties;
+        this.chatMemory = MessageWindowChatMemory.builder()
+                .chatMemoryRepository(chatMemoryRepository)
+                .maxMessages(10)
+                .build();
         this.chatClient = builder
                 .defaultSystem(SYSTEM_PROMPT)
+                .defaultAdvisors(
+                        MessageChatMemoryAdvisor.builder(chatMemory).build()
+                )
                 .build();
         this.circuitBreaker = circuitBreakerRegistry
                 .circuitBreaker("groqClient");
-        this.properties = properties;
+        log.info("ChatMemoryRepository implementation: {}",
+                chatMemoryRepository.getClass().getName());
     }
 
-    public Mono<ChatResponse> chat(String message) {
+    public Mono<ChatResponse> chat(String message,String conversationId) {
         long start = System.currentTimeMillis();
 
         return Mono.fromCallable(() -> {
@@ -75,9 +89,9 @@ public class SpringAiChatService {
                     // Step 3: build augmented prompt
                     String augmentedMessage = relevantDocs.isEmpty()
                             ? "The user asked: " + message +
-                            "\n\nNo relevant information was found in the knowledge base. " +
-                            "Politely inform the user that this question is outside the " +
-                            "scope of the available documents."
+                            "\n\nNo new document context found. You may answer based on " +
+                            "previous conversation context if relevant, otherwise politely " +
+                            "inform the user this is outside scope of available documents."
                             : "Context from documents:" + System.lineSeparator() +
                             context + System.lineSeparator() + System.lineSeparator() +
                             "Question: " + message;
@@ -89,6 +103,8 @@ public class SpringAiChatService {
                     // Step 4: call LLM with augmented prompt
                     return chatClient.prompt()
                             .user(augmentedMessage)
+                            .advisors(advisor -> advisor
+                                    .param(ChatMemory.CONVERSATION_ID, conversationId))
                             .call()
                             .chatResponse();
                 })

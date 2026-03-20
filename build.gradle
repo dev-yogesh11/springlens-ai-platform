@@ -33,6 +33,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.ai:spring-ai-pdf-document-reader'
 	implementation 'org.springframework.ai:spring-ai-advisors-vector-store'
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	implementation 'org.flywaydb:flyway-database-postgresql'
+
 	runtimeOnly 'org.postgresql:postgresql'
 	testImplementation 'com.h2database:h2'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'

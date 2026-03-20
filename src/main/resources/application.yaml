@@ -16,7 +16,7 @@ spring:
           model: text-embedding-3-small
     vectorstore:
       pgvector:
-        initialize-schema: true
+        initialize-schema: false
         dimensions: 1536
         distance-type: COSINE_DISTANCE
   datasource:
@@ -25,7 +25,7 @@ spring:
     password: ${DB_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: none
 
   webflux:
     multipart:
@@ -37,6 +37,13 @@ spring:
       host: localhost
       port: 6380
       password: ${REDIS_PASSWORD}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    baseline-version: 0
+    validate-on-migrate: true
+    out-of-order: false
 
 server:
   port: 8087

@@ -39,12 +39,15 @@ public class SpringAiChatService {
     private final VectorStore vectorStore;
     private final IngestionProperties properties;
     private final ChatMemory chatMemory;
+    private final ReciprocalRankFusionService rrfService;
 
     public SpringAiChatService(ChatClient.Builder builder,
                                CircuitBreakerRegistry circuitBreakerRegistry,
-                               VectorStore vectorStore, IngestionProperties properties, ChatMemoryRepository chatMemoryRepository) {
+                               VectorStore vectorStore, IngestionProperties properties, ChatMemoryRepository chatMemoryRepository,
+                               ReciprocalRankFusionService rrfService) {
         this.vectorStore = vectorStore;
         this.properties = properties;
+        this.rrfService = rrfService;
         this.chatMemory = MessageWindowChatMemory.builder()
                 .chatMemoryRepository(chatMemoryRepository)
                 .maxMessages(10)
@@ -104,7 +107,8 @@ public class SpringAiChatService {
                     return chatClient.prompt()
                             .user(augmentedMessage)
                             .advisors(advisor -> advisor
-                                    .param(ChatMemory.CONVERSATION_ID, conversationId))
+                                    .param(ChatMemory.CONVERSATION_ID,
+                                            conversationId != null ? conversationId : "default"))
                             .call()
                             .chatResponse();
                 })
@@ -152,13 +156,9 @@ public class SpringAiChatService {
 
     public Flux<String> stream(String message) {
         return Mono.fromCallable(() -> {
-                    // blocking similarity search — runs on boundedElastic
-                    List<Document> relevantDocs = vectorStore.similaritySearch(
-                            SearchRequest.builder()
-                                    .query(message)
-                                    .topK(properties.getTopK())
-                                    .similarityThreshold(properties.getSimilarityThreshold())
-                                    .build()
+                    // hybrid search replacing pure vector search
+                    List<Document> relevantDocs = rrfService.hybridSearch(
+                            message, properties.getSimilarityThreshold()
                     );
 
                     String context = relevantDocs.stream()
@@ -171,7 +171,7 @@ public class SpringAiChatService {
                                             "---" + System.lineSeparator() + System.lineSeparator()
                             ));
 
-                    log.debug("Streaming RAG retrieved {} chunks for query={}",
+                    log.debug("Streaming hybrid RAG retrieved {} chunks for query='{}'",
                             relevantDocs.size(), message);
 
                     return relevantDocs.isEmpty()
@@ -194,14 +194,10 @@ public class SpringAiChatService {
     }
 
     public Mono<QueryResponse> query(String message) {
-
         return Mono.fromCallable(() -> {
-                    List<Document> relevantDocs = vectorStore.similaritySearch(
-                            SearchRequest.builder()
-                                    .query(message)
-                                    .topK(properties.getTopK())
-                                    .similarityThreshold(properties.getSimilarityThreshold())
-                                    .build()
+                    // hybrid search replacing pure vector search
+                    List<Document> relevantDocs = rrfService.hybridSearch(
+                            message, properties.getSimilarityThreshold()
                     );
 
                     List<QueryResponse.CitedSource> sources = relevantDocs.stream()
@@ -209,8 +205,8 @@ public class SpringAiChatService {
                                     (String) doc.getMetadata().getOrDefault(
                                             "original_file_name",
                                             doc.getMetadata().get("file_name")),
-                                    Integer.parseInt(String.valueOf(
-                                            doc.getMetadata().get("page_number"))),
+                                    doc.getMetadata().get("page_number") != null
+                                            ? Integer.parseInt(String.valueOf(doc.getMetadata().get("page_number"))) : 0,
                                     doc.getText().substring(0, Math.min(200, doc.getText().length()))
                                             .trim()
                                             .replaceAll("\\s+", " ")
@@ -234,7 +230,7 @@ public class SpringAiChatService {
                             context + System.lineSeparator() + System.lineSeparator() +
                             "Question: " + message;
 
-                    log.debug("Query RAG retrieved {} chunks for query={}",
+                    log.debug("Query hybrid RAG retrieved {} chunks for query='{}'",
                             relevantDocs.size(), message);
 
                     String answer = chatClient.prompt()
@@ -256,5 +252,4 @@ public class SpringAiChatService {
                         List.of(), 0.0, UUID.randomUUID()
                 )));
     }
-
 }

@@ -8,14 +8,13 @@ public record QueryResponse(
         List<CitedSource> sources,
         Double confidence,
         UUID queryId,
-        String retrievalStrategy,   // actual strategy used — reflects request param or config default
+        String retrievalStrategy,
         Integer promptTokens,
         Integer completionTokens,
         Integer totalTokens,
         Long latencyMs
 ) {
-    // Backward-compatible constructor — existing callers without token fields
-    // Used by error fallback paths where token data is unavailable
+    // Backward-compatible constructor — used by error fallback paths
     public QueryResponse(String answer, List<CitedSource> sources,
                          Double confidence, UUID queryId) {
         this(answer, sources, confidence, queryId, "unknown", 0, 0, 0, 0L);
@@ -24,6 +23,7 @@ public record QueryResponse(
     public record CitedSource(
             String fileName,
             Integer pageNumber,
-            String excerpt
+            String excerpt,    // 200 char truncated — for UI display
+            String fullText    // complete chunk text — for RAGAS evaluation
     ) {}
 }

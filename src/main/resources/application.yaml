@@ -94,6 +94,12 @@ springlens:
     rerank-model: rerank-v4.0-pro
     top-n: 4
 
+  ragas:
+    base-url: http://localhost:8088
+    evaluate-path: /evaluate
+    health-path: /health
+    enabled: true
+
 logging:
   level:
     root: INFO

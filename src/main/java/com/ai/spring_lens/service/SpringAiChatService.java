@@ -251,6 +251,8 @@ public class SpringAiChatService {
         return Mono.fromCallable(() -> {
                     List<Document> relevantDocs = retrieve(message, retrievalStrategy);
 
+                    // CitedSource mapping — excerpt truncated for display,
+                    // fullText preserved for RAGAS evaluation
                     List<QueryResponse.CitedSource> sources = relevantDocs.stream()
                             .map(doc -> new QueryResponse.CitedSource(
                                     (String) doc.getMetadata().getOrDefault(
@@ -263,7 +265,8 @@ public class SpringAiChatService {
                                     doc.getText().substring(0,
                                                     Math.min(200, doc.getText().length()))
                                             .trim()
-                                            .replaceAll("\\s+", " ")
+                                            .replaceAll("\\s+", " "),  // excerpt — display only
+                                    doc.getText()                       // fullText — complete chunk
                             ))
                             .toList();
 

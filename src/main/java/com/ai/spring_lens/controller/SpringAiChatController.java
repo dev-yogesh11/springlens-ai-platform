@@ -19,11 +19,12 @@ public class SpringAiChatController {
         this.chatService = chatService;
     }
 
+    // Pure vector baseline — memory active, strategy always vector-only
     @PostMapping
     public Mono<ResponseEntity<Object>> chat(
             @RequestBody ChatRequest request
     ) {
-        return chatService.chat(request.message(),request.conversationId())
+        return chatService.chat(request.message(), request.conversationId())
                 .<ResponseEntity<Object>>map(ResponseEntity::ok)
                 .onErrorResume(ex -> {
                     String message = ex.getMessage() != null
@@ -35,20 +36,28 @@ public class SpringAiChatController {
                 });
     }
 
+    // Streaming — configurable strategy via request param
+    // Example: GET /api/v1/ai/chat/stream?message=KYC+policy&retrievalStrategy=hybrid
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> stream(@RequestParam String message) {
-        return chatService.stream(message);
+    public Flux<String> stream(
+            @RequestParam String message,
+            @RequestParam(required = false) String retrievalStrategy
+    ) {
+        return chatService.stream(message, retrievalStrategy);
     }
 
+    // Primary production endpoint — configurable strategy via request body
+    // Example body: {"message": "KYC policy", "retrievalStrategy": "hybrid-rerank"}
     @PostMapping("/query")
     public Mono<ResponseEntity<Object>> query(
             @RequestBody ChatRequest request
     ) {
-        return chatService.query(request.message())
+        return chatService.query(request.message(), request.retrievalStrategy())
                 .<ResponseEntity<Object>>map(ResponseEntity::ok)
                 .onErrorResume(ex -> Mono.just(
                         ResponseEntity.internalServerError()
-                                .body((Object) new ErrorResponse("QUERY_ERROR", ex.getMessage()))
+                                .body((Object) new ErrorResponse("QUERY_ERROR",
+                                        ex.getMessage()))
                 ));
     }
 }

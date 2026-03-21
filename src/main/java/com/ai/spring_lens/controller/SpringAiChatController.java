@@ -19,12 +19,15 @@ public class SpringAiChatController {
         this.chatService = chatService;
     }
 
-    // Pure vector baseline — memory active, strategy always vector-only
+    // Pure vector baseline — memory configurable, defaults to config value
     @PostMapping
     public Mono<ResponseEntity<Object>> chat(
             @RequestBody ChatRequest request
     ) {
-        return chatService.chat(request.message(), request.conversationId())
+        return chatService.chat(
+                        request.message(),
+                        request.conversationId(),
+                        request.memoryEnabled())
                 .<ResponseEntity<Object>>map(ResponseEntity::ok)
                 .onErrorResume(ex -> {
                     String message = ex.getMessage() != null
@@ -36,8 +39,7 @@ public class SpringAiChatController {
                 });
     }
 
-    // Streaming — configurable strategy via request param
-    // Example: GET /api/v1/ai/chat/stream?message=KYC+policy&retrievalStrategy=hybrid
+    // Streaming — configurable strategy, always stateless
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> stream(
             @RequestParam String message,
@@ -46,13 +48,16 @@ public class SpringAiChatController {
         return chatService.stream(message, retrievalStrategy);
     }
 
-    // Primary production endpoint — configurable strategy via request body
-    // Example body: {"message": "KYC policy", "retrievalStrategy": "hybrid-rerank"}
+    // Primary production endpoint — configurable strategy + configurable memory
     @PostMapping("/query")
     public Mono<ResponseEntity<Object>> query(
             @RequestBody ChatRequest request
     ) {
-        return chatService.query(request.message(), request.retrievalStrategy())
+        return chatService.query(
+                        request.message(),
+                        request.retrievalStrategy(),
+                        request.memoryEnabled(),
+                        request.conversationId())
                 .<ResponseEntity<Object>>map(ResponseEntity::ok)
                 .onErrorResume(ex -> Mono.just(
                         ResponseEntity.internalServerError()

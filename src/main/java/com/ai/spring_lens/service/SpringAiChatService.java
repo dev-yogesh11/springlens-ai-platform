@@ -1,5 +1,6 @@
 package com.ai.spring_lens.service;
 
+import com.ai.spring_lens.config.ChatMemoryProperties;
 import com.ai.spring_lens.config.IngestionProperties;
 import com.ai.spring_lens.config.RetrievalProperties;
 import com.ai.spring_lens.model.response.ChatResponse;
@@ -45,6 +46,7 @@ public class SpringAiChatService {
     private final ChatMemory chatMemory;
     private final Map<String, RetrievalStrategy> retrievalStrategies;
     private final RetrievalProperties retrievalProperties;
+    private final ChatMemoryProperties chatMemoryProperties;
 
     public SpringAiChatService(ChatClient.Builder builder,
                                CircuitBreakerRegistry circuitBreakerRegistry,
@@ -52,7 +54,7 @@ public class SpringAiChatService {
                                IngestionProperties properties,
                                ChatMemoryRepository chatMemoryRepository,
                                Map<String, RetrievalStrategy> retrievalStrategies,
-                               RetrievalProperties retrievalProperties) {
+                               RetrievalProperties retrievalProperties, ChatMemoryProperties chatMemoryProperties) {
         this.vectorStore = vectorStore;
         this.properties = properties;
         this.retrievalStrategies = retrievalStrategies;
@@ -66,6 +68,7 @@ public class SpringAiChatService {
                 .build();
         this.circuitBreaker = circuitBreakerRegistry
                 .circuitBreaker("groqClient");
+        this.chatMemoryProperties = chatMemoryProperties;
         log.info("ChatMemoryRepository implementation: {}",
                 chatMemoryRepository.getClass().getName());
         log.info("Available retrieval strategies: {}",
@@ -127,7 +130,12 @@ public class SpringAiChatService {
     // Retrieval strategy: always vector-only (baseline comparison)
     // ---------------------------------------------------------------
 
-    public Mono<ChatResponse> chat(String message, String conversationId) {
+    // ---------------------------------------------------------------
+    // chat() — configurable retrieval strategy + configurable memory
+    // ---------------------------------------------------------------
+
+    public Mono<ChatResponse> chat(String message, String conversationId,
+                                   Boolean memoryEnabled) {
         long start = System.currentTimeMillis();
 
         return Mono.fromCallable(() -> {
@@ -146,14 +154,27 @@ public class SpringAiChatService {
                             relevantDocs.size(), message);
                     log.debug("Augmented prompt sent to LLM:\n{}", augmentedMessage);
 
-                    return chatClient.prompt()
-                            .user(augmentedMessage)
-                            .advisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
-                            .advisors(advisor -> advisor
-                                    .param(ChatMemory.CONVERSATION_ID,
-                                            conversationId != null ? conversationId : "default"))
-                            .call()
-                            .chatResponse();
+                    // Resolve memory: request param overrides config default
+                    boolean useMemory = memoryEnabled != null
+                            ? memoryEnabled
+                            : chatMemoryProperties.isEnabledByDefault();
+
+                    log.debug("chat() memory enabled={} conversationId='{}'",
+                            useMemory, conversationId);
+
+                    var prompt = chatClient.prompt().user(augmentedMessage);
+
+                    if (useMemory) {
+                        prompt = prompt
+                                .advisors(MessageChatMemoryAdvisor
+                                        .builder(chatMemory).build())
+                                .advisors(advisor -> advisor
+                                        .param(ChatMemory.CONVERSATION_ID,
+                                                conversationId != null
+                                                        ? conversationId : "default"));
+                    }
+
+                    return prompt.call().chatResponse();
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .transform(CircuitBreakerOperator.of(circuitBreaker))
@@ -164,7 +185,8 @@ public class SpringAiChatService {
                     var text = response.getResult() != null
                             ? response.getResult().getOutput().getText()
                             : "no content";
-                    log.debug("LLM response: model={} promptTokens={} completionTokens={} response=\n{}",
+                    log.debug(
+                            "LLM response: model={} promptTokens={} completionTokens={} response=\n{}",
                             metadata != null ? metadata.getModel() : "unknown",
                             usage != null ? usage.getPromptTokens() : 0,
                             usage != null ? usage.getCompletionTokens() : 0,
@@ -192,7 +214,6 @@ public class SpringAiChatService {
                     ));
                 });
     }
-
     // ---------------------------------------------------------------
     // stream() — configurable retrieval strategy, no memory
     // ---------------------------------------------------------------
@@ -219,10 +240,12 @@ public class SpringAiChatService {
     }
 
     // ---------------------------------------------------------------
-    // query() — configurable retrieval strategy, no memory
-    // Primary production endpoint — returns structured QueryResponse
+    // query() — configurable retrieval strategy + configurable memory
+    // stream() always stateless — no memory, no change needed
     // ---------------------------------------------------------------
-    public Mono<QueryResponse> query(String message, String retrievalStrategy) {
+
+    public Mono<QueryResponse> query(String message, String retrievalStrategy,
+                                     Boolean memoryEnabled, String conversationId) {
         long start = System.currentTimeMillis();
 
         return Mono.fromCallable(() -> {
@@ -237,7 +260,8 @@ public class SpringAiChatService {
                                             ? Integer.parseInt(String.valueOf(
                                             doc.getMetadata().get("page_number")))
                                             : 0,
-                                    doc.getText().substring(0, Math.min(200, doc.getText().length()))
+                                    doc.getText().substring(0,
+                                                    Math.min(200, doc.getText().length()))
                                             .trim()
                                             .replaceAll("\\s+", " ")
                             ))
@@ -245,33 +269,45 @@ public class SpringAiChatService {
 
                     String augmentedMessage = buildAugmentedMessage(message, relevantDocs);
 
-                    // Resolve actual strategy name for response — reflects config default
-                    // when request param is null
                     String resolvedStrategy = (retrievalStrategy != null
                             && !retrievalStrategy.isBlank())
                             ? retrievalStrategy
                             : retrievalProperties.getDefaultStrategy();
 
-                    log.debug("Query retrieved {} chunks strategy='{}' query='{}'",
-                            relevantDocs.size(), resolvedStrategy, message);
+                    // Resolve memory: request param overrides config default
+                    boolean useMemory = memoryEnabled != null
+                            ? memoryEnabled
+                            : chatMemoryProperties.isEnabledByDefault();
 
-                    // Switch from .content() to .chatResponse() to capture token metadata
-                    // Same pattern used in chat() method — consistent across all endpoints
-                    var chatResponse = chatClient.prompt()
-                            .user(augmentedMessage)
-                            .call()
-                            .chatResponse();
+                    log.debug("Query retrieved {} chunks strategy='{}' memory={} query='{}'",
+                            relevantDocs.size(), resolvedStrategy, useMemory, message);
 
-                    var metadata = chatResponse != null ? chatResponse.getMetadata() : null;
+                    var prompt = chatClient.prompt().user(augmentedMessage);
+
+                    if (useMemory) {
+                        prompt = prompt
+                                .advisors(MessageChatMemoryAdvisor
+                                        .builder(chatMemory).build())
+                                .advisors(advisor -> advisor
+                                        .param(ChatMemory.CONVERSATION_ID,
+                                                conversationId != null
+                                                        ? conversationId : "default"));
+                    }
+
+                    var chatResponse = prompt.call().chatResponse();
+
+                    var metadata = chatResponse != null
+                            ? chatResponse.getMetadata() : null;
                     var usage = metadata != null ? metadata.getUsage() : null;
                     String answer = chatResponse != null
                             && chatResponse.getResult() != null
                             ? chatResponse.getResult().getOutput().getText()
                             : "";
 
-                    log.debug("Query LLM response: strategy='{}' promptTokens={} " +
-                                    "completionTokens={} latencyMs={}",
-                            resolvedStrategy,
+                    log.debug(
+                            "Query LLM response: strategy='{}' memory={} " +
+                                    "promptTokens={} completionTokens={} latencyMs={}",
+                            resolvedStrategy, useMemory,
                             usage != null ? usage.getPromptTokens() : 0,
                             usage != null ? usage.getCompletionTokens() : 0,
                             System.currentTimeMillis() - start);

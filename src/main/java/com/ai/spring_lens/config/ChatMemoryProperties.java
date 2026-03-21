@@ -11,4 +11,5 @@ public class ChatMemoryProperties {
     private int maxMessages = 10;
     private long ttlSeconds = 3600;
     private String keyPrefix = "springlens:chat-";
+    private boolean enabledByDefault = true;
 }

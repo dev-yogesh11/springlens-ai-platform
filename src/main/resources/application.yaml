@@ -75,6 +75,7 @@ springlens:
       max-messages: 10
       ttl-seconds: 3600
       key-Prefix: springlens:chat-
+      enabled-by-default: false
 
   retrieval:
     default-strategy: hybrid-rerank

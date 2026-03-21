@@ -73,6 +73,13 @@ springlens:
       max-messages: 10
       ttl-seconds: 3600
       key-Prefix: springlens:chat-
+  hybrid-search:
+    fts-weight: 0.3
+    vector-weight: 0.7
+    rrf-k: 60
+    fts-top-k: 20
+    vector-top-k: 20
+    final-top-k: 4
 
 logging:
   level:

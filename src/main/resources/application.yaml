@@ -62,6 +62,11 @@ resilience4j:
 
 springlens:
 
+  jwt:
+    secret: ${JWT_SECRET}
+    expiry-seconds: 3600
+    issuer: springlens
+
   ingestion:
     chunk-size: 512
     min-chunk-size-chars: 50

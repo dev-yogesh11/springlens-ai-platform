@@ -3,10 +3,13 @@ package com.ai.spring_lens.controller;
 import com.ai.spring_lens.model.request.ChatRequest;
 import com.ai.spring_lens.model.response.ErrorResponse;
 import com.ai.spring_lens.security.TenantContext;
+import com.ai.spring_lens.service.BudgetEnforcementService;
 import com.ai.spring_lens.service.SpringAiChatService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -27,9 +30,11 @@ import reactor.core.publisher.Mono;
 public class SpringAiChatController {
 
     private final SpringAiChatService chatService;
+    private final BudgetEnforcementService budgetEnforcementService;
 
-    public SpringAiChatController(SpringAiChatService chatService) {
+    public SpringAiChatController(SpringAiChatService chatService, BudgetEnforcementService budgetEnforcementService) {
         this.chatService = chatService;
+        this.budgetEnforcementService = budgetEnforcementService;
     }
 
     /**
@@ -51,6 +56,34 @@ public class SpringAiChatController {
     }
 
     /**
+     * Runs budget enforcement and returns result with warnings.
+     * Throws 429 or 402 if any limit exceeded.
+     * Returns BudgetCheckResult with warning strings for header injection.
+     */
+    private Mono<BudgetEnforcementService.BudgetCheckResult> checkBudget(
+            TenantContext ctx) {
+        return budgetEnforcementService.enforce(ctx);
+    }
+
+    /**
+     * Adds budget warning headers to response if any limits approaching.
+     * Header format: X-Budget-Warning: user-daily-requests at 85% (85/100)
+     */
+    private ResponseEntity<Object> withWarningHeaders(
+            ResponseEntity<Object> response,
+            BudgetEnforcementService.BudgetCheckResult budgetResult) {
+        if (!budgetResult.hasWarnings()) {
+            return response;
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.addAll(response.getHeaders());
+        budgetResult.warnings().forEach(warning ->
+                headers.add("X-Budget-Warning", warning));
+        return new ResponseEntity<>(response.getBody(), headers,
+                response.getStatusCode());
+    }
+
+    /**
      * Pure vector baseline — memory configurable, defaults to config value.
      * Always uses vector-only retrieval — preserved as Phase 1 comparison.
      */
@@ -59,21 +92,28 @@ public class SpringAiChatController {
             @RequestBody ChatRequest request
     ) {
         return tenantContext()
-                .flatMap(ctx -> chatService.chat(
-                        request.message(),
-                        request.conversationId(),
-                        request.memoryEnabled(),
-                        ctx.tenantId(),
-                        ctx))
-                .<ResponseEntity<Object>>map(ResponseEntity::ok)
+                .flatMap(ctx -> checkBudget(ctx)
+                        .flatMap(budgetResult -> chatService.chat(
+                                        request.message(),
+                                        request.conversationId(),
+                                        request.memoryEnabled(),
+                                        ctx.tenantId(),
+                                        ctx)
+                                .<ResponseEntity<Object>>map(ResponseEntity::ok)
+                                .map(response -> withWarningHeaders(response, budgetResult))))
                 .onErrorResume(ex -> {
+                    if (ex instanceof ResponseStatusException rse) {
+                        return Mono.just(ResponseEntity
+                                .status(rse.getStatusCode())
+                                .body((Object) new ErrorResponse(
+                                        rse.getStatusCode().toString(),
+                                        rse.getReason())));
+                    }
                     String message = ex.getMessage() != null
-                            ? ex.getMessage()
-                            : "Unexpected error occurred";
+                            ? ex.getMessage() : "Unexpected error occurred";
                     return Mono.just(ResponseEntity
                             .internalServerError()
-                            .body((Object) new ErrorResponse(
-                                    "LLM_ERROR", message)));
+                            .body((Object) new ErrorResponse("LLM_ERROR", message)));
                 });
     }
 
@@ -87,13 +127,18 @@ public class SpringAiChatController {
             @RequestParam(required = false) String retrievalStrategy
     ) {
         return tenantContext()
+                .flatMap(ctx -> checkBudget(ctx).thenReturn(ctx))
                 .flatMapMany(ctx -> chatService.stream(
                         message,
                         retrievalStrategy,
                         ctx.tenantId(),
                         ctx))
-                .onErrorResume(ex -> Flux.just(
-                        "Service temporarily unavailable."));
+                .onErrorResume(ex -> {
+                    if (ex instanceof ResponseStatusException rse) {
+                        return Flux.error(rse);
+                    }
+                    return Flux.just("Service temporarily unavailable.");
+                });
     }
 
     /**
@@ -105,18 +150,28 @@ public class SpringAiChatController {
             @RequestBody ChatRequest request
     ) {
         return tenantContext()
-                .flatMap(ctx -> chatService.query(
-                        request.message(),
-                        request.retrievalStrategy(),
-                        request.memoryEnabled(),
-                        request.conversationId(),
-                        ctx.tenantId(),
-                        ctx))
-                .<ResponseEntity<Object>>map(ResponseEntity::ok)
-                .onErrorResume(ex -> Mono.just(
-                        ResponseEntity.internalServerError()
+                .flatMap(ctx -> checkBudget(ctx)
+                        .flatMap(budgetResult -> chatService.query(
+                                        request.message(),
+                                        request.retrievalStrategy(),
+                                        request.memoryEnabled(),
+                                        request.conversationId(),
+                                        ctx.tenantId(),
+                                        ctx)
+                                .<ResponseEntity<Object>>map(ResponseEntity::ok)
+                                .map(response -> withWarningHeaders(response, budgetResult))))
+                .onErrorResume(ex -> {
+                    if (ex instanceof ResponseStatusException rse) {
+                        return Mono.just(ResponseEntity
+                                .status(rse.getStatusCode())
                                 .body((Object) new ErrorResponse(
-                                        "QUERY_ERROR", ex.getMessage()))
-                ));
+                                        rse.getStatusCode().toString(),
+                                        rse.getReason())));
+                    }
+                    return Mono.just(ResponseEntity
+                            .internalServerError()
+                            .body((Object) new ErrorResponse(
+                                    "QUERY_ERROR", ex.getMessage())));
+                });
     }
 }

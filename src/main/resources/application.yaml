@@ -99,6 +99,9 @@ springlens:
     vector-top-k: 20
     final-top-k: 4
 
+  budget:
+    warning-threshold-percent: 80
+
   cohere:
     api-key: ${COHERE_API_KEY}
     base-url: https://api.cohere.com

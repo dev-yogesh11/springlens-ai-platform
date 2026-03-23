@@ -10,55 +10,51 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * JDBC repository for user authentication.
- * Follows same pattern as HybridSearchRepository and RagasEvaluationRepository.
+ * JDBC repository for tenant data.
+ * Follows same pattern as UserRepository and HybridSearchRepository.
  *
- * Only two queries needed:
- * - findByEmail     — login authentication
- * - existsByEmail   — duplicate check (future user creation)
+ * Used by BudgetEnforcementService to load tenant budget limits
+ * on every request for budget checking.
  *
  * Blocking JDBC — must be called on Schedulers.boundedElastic().
  */
 @Slf4j
 @Repository
-public class UserRepository {
+public class TenantRepository {
 
-    private static final String FIND_BY_EMAIL = """
-        SELECT id, tenant_id, email, password_hash, role, enabled,
-               monthly_token_budget, daily_token_budget, daily_request_limit
-        FROM users
-        WHERE email = :email
-        """;
+    private static final String FIND_BY_ID = """
+            SELECT id, name, enabled,
+                   monthly_token_budget, daily_token_budget, daily_request_limit
+            FROM tenants
+            WHERE id = :id
+            """;
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
-    public UserRepository(NamedParameterJdbcTemplate jdbcTemplate) {
+    public TenantRepository(NamedParameterJdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
-     * Finds a user by email address.
-     * Called on every login attempt.
+     * Finds a tenant by UUID.
+     * Called on every request for budget enforcement.
      *
-     * Returns empty if user not found or disabled.
+     * Returns empty if tenant not found or disabled.
      * Blocking JDBC — caller must use Schedulers.boundedElastic().
      *
-     * @param email user email from login request
-     * @return Optional containing user record or empty if not found
+     * @param tenantId tenant UUID from JWT claim
+     * @return Optional containing tenant record or empty if not found
      */
-    public Optional<UserRecord> findByEmail(String email) {
-        log.debug("Looking up user by email={}", email);
+    public Optional<TenantRecord> findById(UUID tenantId) {
+        log.debug("Looking up tenant by id={}", tenantId);
 
         MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("email", email);
+                .addValue("id", tenantId);
 
-        List<UserRecord> results = jdbcTemplate.query(
-                FIND_BY_EMAIL, params, (rs, rowNum) -> new UserRecord(
+        List<TenantRecord> results = jdbcTemplate.query(
+                FIND_BY_ID, params, (rs, rowNum) -> new TenantRecord(
                         UUID.fromString(rs.getString("id")),
-                        UUID.fromString(rs.getString("tenant_id")),
-                        rs.getString("email"),
-                        rs.getString("password_hash"),
-                        rs.getString("role"),
+                        rs.getString("name"),
                         rs.getBoolean("enabled"),
                         rs.getObject("monthly_token_budget") != null
                                 ? rs.getLong("monthly_token_budget") : null,
@@ -72,16 +68,12 @@ public class UserRepository {
     }
 
     /**
-     * Immutable user record from DB.
-     * password_hash is BCrypt hash — never plain text.
+     * Immutable tenant record from DB.
      * Budget fields are nullable — null means unlimited.
      */
-    public record UserRecord(
+    public record TenantRecord(
             UUID id,
-            UUID tenantId,
-            String email,
-            String passwordHash,
-            String role,
+            String name,
             boolean enabled,
             Long monthlyTokenBudget,
             Long dailyTokenBudget,

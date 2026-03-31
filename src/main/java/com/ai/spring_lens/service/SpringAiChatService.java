@@ -82,7 +82,7 @@ public class SpringAiChatService {
 
     // ---------------------------------------------------------------
     // Strategy resolution — request param overrides config default
-    // Falls back to "hybrid" if unknown strategy name provided
+    // Falls back to default strategy(configurable) if unknown strategy name provided
     // ---------------------------------------------------------------
 
     private List<Document> retrieve(String query, String requestStrategy, UUID tenantId) {
@@ -93,9 +93,9 @@ public class SpringAiChatService {
         RetrievalStrategy strategy = retrievalStrategies.get(strategyName);
 
         if (strategy == null) {
-            log.warn("Unknown retrieval strategy='{}', falling back to 'hybrid'",
-                    strategyName);
-            strategy = retrievalStrategies.get("hybrid");
+            log.warn("Unknown retrieval strategy='{}', falling back to default strategy '{}'",
+                    strategyName,retrievalProperties.getDefaultStrategy());
+            strategy = retrievalStrategies.get(retrievalProperties.getDefaultStrategy());
         }
 
         log.info("Retrieval strategy='{}' query='{}'", strategyName, query);
@@ -307,6 +307,7 @@ public class SpringAiChatService {
 
                         return new QueryResponse(
                                 res.content(),
+                                res.model(),
                                 sources,
                                 sources.isEmpty() ? 0.0 : 0.8,
                                 UUID.randomUUID(),
@@ -331,7 +332,7 @@ public class SpringAiChatService {
                         response.latencyMs()
                 ).thenReturn(response))
                 .onErrorResume(ex -> Mono.just(new QueryResponse(
-                        "Service temporarily unavailable. Please try again shortly.",
+                        "Service temporarily unavailable. Please try again shortly.","NA",
                         List.of(), 0.0, UUID.randomUUID()
                 )));
     }

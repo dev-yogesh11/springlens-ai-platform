@@ -67,7 +67,7 @@ public class SpringAiChatController {
 
     /**
      * Adds budget warning headers to response if any limits approaching.
-     * Header format: X-Budget-Warning: user-daily-requests at 85% (85/100)
+     * Header format: X-Budget-Warning: user-daily-requests at 85% (85/100)-- this is configurable
      */
     private ResponseEntity<Object> withWarningHeaders(
             ResponseEntity<Object> response,
@@ -118,30 +118,6 @@ public class SpringAiChatController {
     }
 
     /**
-     * Streaming — configurable strategy, always stateless, no memory.
-     * Tenant context passed to service for document isolation and audit.
-     */
-    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> stream(
-            @RequestParam String message,
-            @RequestParam(required = false) String retrievalStrategy
-    ) {
-        return tenantContext()
-                .flatMap(ctx -> checkBudget(ctx).thenReturn(ctx))
-                .flatMapMany(ctx -> chatService.stream(
-                        message,
-                        retrievalStrategy,
-                        ctx.tenantId(),
-                        ctx))
-                .onErrorResume(ex -> {
-                    if (ex instanceof ResponseStatusException rse) {
-                        return Flux.error(rse);
-                    }
-                    return Flux.just("Service temporarily unavailable.");
-                });
-    }
-
-    /**
      * Primary production endpoint — configurable strategy + configurable memory.
      * Tenant context extracted and passed explicitly to service.
      */
@@ -174,4 +150,29 @@ public class SpringAiChatController {
                                     "QUERY_ERROR", ex.getMessage())));
                 });
     }
+
+    /**
+     * Streaming — configurable strategy, always stateless, no memory.
+     * Tenant context passed to service for document isolation and audit.
+     */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> stream(
+            @RequestParam String message,
+            @RequestParam(required = false) String retrievalStrategy
+    ) {
+        return tenantContext()
+                .flatMap(ctx -> checkBudget(ctx).thenReturn(ctx))
+                .flatMapMany(ctx -> chatService.stream(
+                        message,
+                        retrievalStrategy,
+                        ctx.tenantId(),
+                        ctx))
+                .onErrorResume(ex -> {
+                    if (ex instanceof ResponseStatusException rse) {
+                        return Flux.error(rse);
+                    }
+                    return Flux.just("Service temporarily unavailable.");
+                });
+    }
+
 }

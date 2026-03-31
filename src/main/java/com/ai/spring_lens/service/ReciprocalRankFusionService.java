@@ -47,6 +47,7 @@ public class ReciprocalRankFusionService {
     public List<Document> hybridSearch(String query, double similarityThreshold, UUID tenantId) {
 
         // Step 1: vector similarity search — semantic meaning
+        // separated with tenant_id
         List<Document> vectorResults = vectorStore.similaritySearch(
                 SearchRequest.builder()
                         .query(query)

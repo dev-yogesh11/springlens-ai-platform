@@ -38,6 +38,7 @@ services:
       retries: 5
 
   ragas:
+    image: spring-lens-ragas
     build:
       context: ./springlens-ragas-evaluator
       dockerfile: Dockerfile
@@ -55,50 +56,51 @@ services:
       timeout: 15s
       retries: 3
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: springlens-app
-    ports:
-      - "8087:8087"
-    networks:
-      - springlens-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      ragas:
-        condition: service_healthy
-    environment:
-      # Database — overrides localhost in application.yaml
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/springlens
-
-      # Redis — use container name + internal port (not host-mapped 6380)
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-
-      # AI Keys
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      GROQ_AI_API_KEY: ${GROQ_AI_API_KEY}
-      COHERE_API_KEY: ${COHERE_API_KEY}
-
-      # JWT
-      JWT_SECRET: ${JWT_SECRET}
-
-      # RAGAS — real container, not host.docker.internal
-      SPRINGLENS_RAGAS_BASE_URL: http://ragas:8088
-
-      # Ollama still runs on host machine
-      SPRINGLENS_LLM_OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
-
-    volumes:
-      - ./logs:/app/logs
-    restart: unless-stopped
+#  app:
+#    image: spring-lens-app
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    container_name: springlens-app
+#    ports:
+#      - "8087:8087"
+#    networks:
+#      - springlens-net
+#    depends_on:
+#      postgres:
+#        condition: service_healthy
+#      redis:
+#        condition: service_healthy
+#      ragas:
+#        condition: service_healthy
+#    environment:
+#      # Database — overrides localhost in application.yaml
+#      DB_USERNAME: ${DB_USERNAME}
+#      DB_PASSWORD: ${DB_PASSWORD}
+#      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/springlens
+#
+#      # Redis — use container name + internal port (not host-mapped 6380)
+#      SPRING_DATA_REDIS_HOST: redis
+#      SPRING_DATA_REDIS_PORT: 6379
+#      REDIS_PASSWORD: ${REDIS_PASSWORD}
+#
+#      # AI Keys
+#      OPENAI_API_KEY: ${OPENAI_API_KEY}
+#      GROQ_AI_API_KEY: ${GROQ_AI_API_KEY}
+#      COHERE_API_KEY: ${COHERE_API_KEY}
+#
+#      # JWT
+#      JWT_SECRET: ${JWT_SECRET}
+#
+#      # RAGAS — real container, not host.docker.internal
+#      SPRINGLENS_RAGAS_BASE_URL: http://ragas:8088
+#
+#      # Ollama still runs on host machine
+#      SPRINGLENS_LLM_OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+#
+#    volumes:
+#      - ./logs:/app/logs
+#    restart: unless-stopped
 
 networks:
   springlens-net:

@@ -53,6 +53,8 @@ public class OpenAiProviderClient implements ProviderClient {
 
             var response = prompt.call().chatResponse();
 
+            log.info("Open AI RAw response {}",response);
+
             var metadata = response.getMetadata();
             var usage = metadata != null ? metadata.getUsage() : null;
 

@@ -35,12 +35,11 @@ public class ProviderRouterService {
     }
 
     /**
-     * For now:
-     * - Only ONE provider (Groq)
-     * - No fallback yet
-     * - No cost routing yet
+     * Executes chat using a fallback chain:
+     * GROQ → OpenAI → Ollama.
      *
-     * We will expand later safely
+     * <p>Each provider is tried sequentially on failure.
+     * Returns the first successful response, or errors if all fail.
      */
     public Mono<ProviderResponse> executeChat(
             TenantContext ctx,
@@ -74,6 +73,14 @@ public class ProviderRouterService {
                 .switchIfEmpty(Mono.error(new RuntimeException("All providers failed")));
     }
 
+    /**
+     * Executes streaming chat using a fallback chain:
+     * GROQ → OpenAI.
+     *
+     * <p>Streams responses from the first successful provider.
+     * Falls back to OpenAI if GROQ streaming fails.
+     * Logs lifecycle events (start, completion, failure).
+     */
     public Flux<String> executeStream(
             TenantContext ctx,
             String message

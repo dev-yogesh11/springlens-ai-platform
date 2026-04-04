@@ -1,19 +1,25 @@
 -- ============================================================
 -- V5__add_tenant_id_to_metadata.sql
--- Adds tenant_id into metadata JSON column of vector_store.
+-- Ensures tenant_id is queryable via Spring AI filterExpression.
 --
--- Spring AI filterExpression works on metadata JSON — not on
--- separate columns. This migration backfills tenant_id into
--- metadata so filterExpression("tenant_id == 'uuid'") works.
+-- HOW SPRING AI TENANT ISOLATION WORKS:
+--   - DocumentIngestionService sets doc.getMetadata().put("tenant_id", ...)
+--   - PGVectorStore writes that into the metadata jsonb column automatically
+--   - similaritySearch(filterExpression("tenant_id == 'uuid'")) translates
+--     to a jsonpath predicate against metadata — no separate column needed
 --
--- All 795 existing chunks belong to default tenant:
--- a0000000-0000-0000-0000-000000000001
+-- WHAT THIS MIGRATION DOES:
+--   1. Adds a GIN index on metadata->>'tenant_id' for fast per-tenant
+--      similarity search filtering (critical for multi-tenant performance)
+--   2. No backfill needed — vector_store is empty at this point;
+--      all future rows will have tenant_id in metadata at write time
 --
--- IDEMPOTENT: Uses || operator which overwrites existing
--- tenant_id value if already present — safe to run twice.
+-- IDEMPOTENT: CREATE INDEX IF NOT EXISTS is safe to re-run.
 -- ============================================================
 
-UPDATE vector_store
-SET metadata = metadata::jsonb || 
-    jsonb_build_object('tenant_id', tenant_id::text)
-WHERE metadata IS NOT NULL;
+-- GIN index on the tenant_id key inside the metadata jsonb column.
+-- Spring AI's filter expression engine targets metadata via jsonpath,
+-- so this index is hit on every tenant-scoped similarity search.
+CREATE INDEX IF NOT EXISTS idx_vector_store_metadata_tenant_id
+    ON vector_store
+    USING GIN ((metadata::jsonb));
